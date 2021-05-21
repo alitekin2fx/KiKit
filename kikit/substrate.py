@@ -426,13 +426,8 @@ class Substrate:
         vector). The tab is constructed with given width. If the substrate is
         not penetrated within maxHeight, exception is raised.
 
-        When partitionLine is specified, tha tab is extended to the opposite
-        side - limited by the partition line. Note that if tab cannot span
-        towards the partition line, then the the tab is not created - it returns
-        a tuple (None, None).
-
-        Returns a pair tab and cut outline. Add the tab it via union - batch
-        adding of geometry is more efficient.
+        Returns a pair tab and cut outline. Add the tab it via
+        uion - batch adding of geometry is more efficient.
         """
         origin = np.array(origin)
         direction = normalize(direction)
@@ -443,38 +438,44 @@ class Substrate:
             boundary, maxHeight)
         splitPointB = closestIntersectionPoint(sideOriginB, direction,
             boundary, maxHeight)
-        tabFace = biteBoundary(boundary, splitPointB, splitPointA)
-        if partitionLine is None:
-            # There is nothing else to do, return the tab
+        if isinstance(boundary, MultiLineString):
+            shiftedOutline = cutOutline(splitPointB, boundary)
+            tabFace = splitLine(shiftedOutline, splitPointA)[0]
             tab = Polygon(list(tabFace.coords) + [sideOriginA, sideOriginB])
             return tab, tabFace
-        # Span the tab towwards the partition line
-        # There might be multiple geometries in the partition line, so try them
-        # individually.
-        direction = -direction
-        for p in listGeometries(partitionLine):
-            try:
-                partitionSplitPointA = closestIntersectionPoint(splitPointA.coords[0],
-                        direction, p, maxHeight)
-                partitionSplitPointB = closestIntersectionPoint(splitPointB.coords[0],
-                    direction, p, maxHeight)
-            except NoIntersectionError: # We cannot span towards the partition line
-                continue
-            if isLinestringCyclic(p):
-                candidates = [(partitionSplitPointA, partitionSplitPointB)]
-            else:
-                candidates = [(partitionSplitPointA, partitionSplitPointB),
-                    (partitionSplitPointB, partitionSplitPointA)]
-            for i, (spa, spb) in enumerate(candidates):
-                partitionFace = biteBoundary(p, spa, spb)
-                if partitionFace is None:
-                    continue
-                partitionFaceCoord = list(partitionFace.coords)
-                if i == 1:
-                    partitionFaceCoord = partitionFaceCoord[::-1]
-                tab = Polygon(list(tabFace.coords) + partitionFaceCoord)
+        else:
+            tabFace = biteBoundary(boundary, splitPointB, splitPointA)
+            if partitionLine is None:
+                # There is nothing else to do, return the tab
+                tab = Polygon(list(tabFace.coords) + [sideOriginA, sideOriginB])
                 return tab, tabFace
-        return None, None
+            # Span the tab towwards the partition line
+            # There might be multiple geometries in the partition line, so try them
+            # individually.
+            direction = -direction
+            for p in listGeometries(partitionLine):
+                try:
+                    partitionSplitPointA = closestIntersectionPoint(splitPointA.coords[0],
+                            direction, p, maxHeight)
+                    partitionSplitPointB = closestIntersectionPoint(splitPointB.coords[0],
+                        direction, p, maxHeight)
+                except NoIntersectionError: # We cannot span towards the partition line
+                    continue
+                if isLinestringCyclic(p):
+                    candidates = [(partitionSplitPointA, partitionSplitPointB)]
+                else:
+                    candidates = [(partitionSplitPointA, partitionSplitPointB),
+                        (partitionSplitPointB, partitionSplitPointA)]
+                for i, (spa, spb) in enumerate(candidates):
+                    partitionFace = biteBoundary(p, spa, spb)
+                    if partitionFace is None:
+                        continue
+                    partitionFaceCoord = list(partitionFace.coords)
+                    if i == 1:
+                        partitionFaceCoord = partitionFaceCoord[::-1]
+                    tab = Polygon(list(tabFace.coords) + partitionFaceCoord)
+                    return tab, tabFace
+            return None, None
 
     def millFillets(self, millRadius):
         """
@@ -510,6 +511,52 @@ class Substrate:
         Decide whether the substrate consists of a single piece
         """
         return isinstance(self.substrates, Polygon)
+
+def splitLine(linestring, point, tolerance=pcbnew.FromMM(0.01)):
+    splitted = split(linestring, point.buffer(tolerance, resolution=1))
+    if len(splitted) != 3:
+        print(splitted)
+        raise RuntimeError("Expected 3 segments in line spitting")
+    p1 = LineString(list(splitted[0].coords) + [point])
+    p2 = LineString([point] + list(splitted[2].coords))
+    return shapely.geometry.collection.GeometryCollection([p1, p2])
+
+def cutOutline(point, linestring, segmentLimit=None, tolerance=pcbnew.FromMM(0.001)):
+    """
+    Given a point finds an entity in (multi)linestring which goes through the
+    point.
+
+    It is possible to restrict the number of segments used by specifying
+    segmentLimit.
+
+    When segment limit is passed, return a tuple of the string starting and
+    ending in that point. When no limit is passed returns a single string.
+    """
+    if not isinstance(point, Point):
+        point = Point(point[0], point[1])
+    if isinstance(linestring, LineString):
+        geom = [linestring]
+    elif isinstance(linestring, MultiLineString):
+        geom = linestring.geoms
+    else:
+        raise RuntimeError("Unknown geometry '{}' passed".format(type(linestring)))
+    for string in geom:
+        bufferedPoint = point.buffer(tolerance, resolution=1)
+        splitted = split(string, bufferedPoint)
+        if len(splitted) == 1 and not Point(splitted[0].coords[0]).intersects(bufferedPoint):
+            continue
+        if len(splitted) == 3:
+            string = LineString([point] + list(splitted[2].coords) + splitted[0].coords[1:])
+        elif len(splitted) == 2:
+            string = LineString(list(splitted[1].coords) + splitted[0].coords[1:])
+        else:
+            string = splitted[0]
+        if segmentLimit is None:
+            return string
+        limit1 = max(1, len(string.coords) - segmentLimit)
+        limit2 = min(segmentLimit, len(string.coords) - 1)
+        return LineString(string.coords[limit1:]), LineString(string.coords[:limit2])
+    return None, None
 
 def showPolygon(polygon):
     import matplotlib.pyplot as plt

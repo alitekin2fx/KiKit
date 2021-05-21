@@ -124,7 +124,7 @@ def collectNetNames(board):
 
 def remapNets(collection, mapping):
     for item in collection:
-        item.SetNetCode(mapping[item.GetNetname()].GetNet())
+        item.SetNetCode(mapping[item.GetNetname()].GetNetCode())
 
 def toPolygon(entity):
     if isinstance(entity, list):
@@ -288,7 +288,7 @@ def readKiKitProps(footprint):
 
     Returns a dictionary of key-value pairs.
     """
-    for x in footprint.GraphicalItemsList():
+    for x in footprint.GraphicalItems():
         if not isinstance(x, pcbnew.FP_TEXT):
             continue
         text = x.GetText()
@@ -429,7 +429,7 @@ class Panel:
         """
         Set design settings
         """
-        self.board.SetDesignSettings(designSettings)
+        #self.board.SetDesignSettings(designSettings)
 
     def inheritProperties(self, boardFilename):
         """
@@ -831,6 +831,7 @@ class Panel:
         """
         module = pcbnew.PCB_IO().FootprintLoad(KIKIT_LIB, "NPTH")
         module.SetPosition(position)
+        self.board.Add(module)
         for pad in module.Pads():
             pad.SetDrillSize(pcbnew.wxSize(diameter, diameter))
             pad.SetSize(pcbnew.wxSize(diameter, diameter))
@@ -839,7 +840,6 @@ class Panel:
                 layerSet.AddLayer(Layer.F_Paste)
                 layerSet.AddLayer(Layer.B_Paste)
                 pad.SetLayerSet(layerSet)
-        self.board.Add(module)
 
     def addFiducial(self, position, copperDiameter, openingDiameter, bottom=False):
         """
@@ -849,6 +849,7 @@ class Panel:
         """
         module = pcbnew.PCB_IO().FootprintLoad(KIKIT_LIB, "Fiducial")
         module.SetPosition(position)
+        self.board.Add(module)
         if(bottom):
             if pcbnew_compatibility.isV6(pcbnew_compatibility.pcbnewVersion):
                 module.Flip(position, False)
@@ -858,7 +859,6 @@ class Panel:
             pad.SetSize(pcbnew.wxSize(copperDiameter, copperDiameter))
             pad.SetLocalSolderMaskMargin(int((openingDiameter - copperDiameter) / 2))
             pad.SetLocalClearance(int((openingDiameter - copperDiameter) / 2))
-        self.board.Add(module)
 
     def panelCorners(self, horizontalOffset=0, verticalOffset=0):
         """

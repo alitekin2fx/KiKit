@@ -58,7 +58,8 @@ def collectItems(boardCollection, sourceArea):
 
 def collectFootprints(boardCollection, sourceArea):
     """ Returns a list of board footprints fully contained in the source area ignoring reference a value label"""
-    return list([x for x in boardCollection if fitsIn(x.GetFootprintRect(), sourceArea)])
+    #return list([x for x in boardCollection if fitsIn(x.GetFootprintRect(), sourceArea)])
+    return boardCollection
 
 def getBBoxWithoutContours(edge):
     width = edge.GetWidth()
